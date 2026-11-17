@@ -66,24 +66,34 @@ def dual_flood(t: Tables, h1: int, h2: int, free: int):
     return seen1.bit_count(), seen2.bit_count()
 
 
-def bfs_dist(t: Tables, start: int, blocked: int):
-    """Distance array (list) from start over cells not in blocked."""
-    n = t.ncells
-    dist = [-1] * n
-    dist[start] = 0
-    frontier = [start]
-    nbr = t.nbr
-    d = 0
-    while frontier:
-        d += 1
-        nxt = []
-        for c in frontier:
-            for _, nc in nbr[c]:
-                if dist[nc] < 0 and not ((blocked >> nc) & 1):
-                    dist[nc] = d
-                    nxt.append(nc)
-        frontier = nxt
-    return dist
+def manhattan(t: Tables, a: int, b: int) -> int:
+    ax, ay = a % t.w, a // t.w
+    bx, by = b % t.w, b // t.w
+    return abs(ax - bx) + abs(ay - by)
+
+
+def _food_waves(t: Tables, head: int, blocked: int, food: int):
+    """Wave-based bitboard BFS from head; returns {food_cell: distance}."""
+    out = {}
+    frontier = 1 << head
+    visited = frontier
+    spread = t.spread
+    wave = 0
+    remaining = food & ~blocked
+    while frontier and remaining:
+        wave += 1
+        frontier = spread(frontier) & ~visited & ~blocked
+        if not frontier:
+            break
+        visited |= frontier
+        hit = frontier & remaining
+        if hit:
+            remaining &= ~hit
+            while hit:
+                c = (hit & -hit).bit_length() - 1
+                out[c] = wave
+                hit &= hit - 1
+    return out
 
 
 def evaluate(t: Tables, state: State, me: int, opp: int, w: Weights) -> float:
@@ -131,12 +141,12 @@ def evaluate(t: Tables, state: State, me: int, opp: int, w: Weights) -> float:
         else:
             score += w["head_kill"]
 
-    # food: BFS distances from both heads
+    # food: wave-based BFS distances from both heads
+    foods = state.food
     my_blocked = (my_bits & ~(1 << mb[-1])) | opp_bits
     opp_blocked = (opp_bits & ~(1 << ob[-1])) | my_bits
-    dist_me = bfs_dist(t, mh, my_blocked)
-    dist_opp = bfs_dist(t, oh, opp_blocked)
-    foods = state.food
+    fd_me = _food_waves(t, mh, my_blocked, foods)
+    fd_opp = _food_waves(t, oh, opp_blocked, foods)
     f = foods
     my_hunger = state.healths[me]
     opp_hunger = state.healths[opp]
@@ -146,18 +156,17 @@ def evaluate(t: Tables, state: State, me: int, opp: int, w: Weights) -> float:
     opp_urg = 1.0
     if opp_hunger < w["low_health"]:
         opp_urg = 3.0
-    # nearest food distance for me
     best_d = None
     while f:
         c = (f & -f).bit_length() - 1
         f &= f - 1
-        dme = dist_me[c]
-        if dme < 0:
+        dme = fd_me.get(c)
+        if dme is None:
             continue
         if best_d is None or dme < best_d:
             best_d = dme
-        dopp = dist_opp[c]
-        if dopp < 0:
+        dopp = fd_opp.get(c)
+        if dopp is None:
             score += w["food_race"] * my_urg * 0.5
         elif dme < dopp:
             score += w["food_race"] * my_urg * (1.0 if dopp - dme >= 1 else 0.3)

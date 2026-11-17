@@ -8,7 +8,7 @@ import time
 
 from .board import Tables
 from .state import State, legal_moves, step
-from .eval import BIG, MATE, Weights, evaluate, bfs_dist
+from .eval import BIG, MATE, Weights, evaluate
 
 INF = float("inf")
 
