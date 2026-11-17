@@ -1,0 +1,27 @@
+{
+  "game": {"id": "test-game", "ruleset": {"name": "standard", "settings": {"hazardDamagePerTurn": 14}}},
+  "turn": 12,
+  "board": {
+    "height": 11,
+    "width": 11,
+    "food": [{"x": 5, "y": 5}, {"x": 0, "y": 0}, {"x": 10, "y": 10}, {"x": 2, "y": 9}, {"x": 8, "y": 1}],
+    "hazards": [],
+    "snakes": [
+      {
+        "id": "me-1", "name": "Vibe", "health": 75,
+        "body": [{"x": 4, "y": 4}, {"x": 4, "y": 5}, {"x": 4, "y": 6}, {"x": 4, "y": 7}, {"x": 3, "y": 7}],
+        "latency": "111", "head": {"x": 4, "y": 4}, "length": 5
+      },
+      {
+        "id": "opp-1", "name": "Foe", "health": 90,
+        "body": [{"x": 7, "y": 6}, {"x": 7, "y": 7}, {"x": 7, "y": 8}, {"x": 6, "y": 8}],
+        "latency": "120", "head": {"x": 7, "y": 6}, "length": 4
+      }
+    ]
+  },
+  "you": {
+    "id": "me-1", "name": "Vibe", "health": 75,
+    "body": [{"x": 4, "y": 4}, {"x": 4, "y": 5}, {"x": 4, "y": 6}, {"x": 4, "y": 7}, {"x": 3, "y": 7}],
+    "latency": "111", "head": {"x": 4, "y": 4}, "length": 5
+  }
+}

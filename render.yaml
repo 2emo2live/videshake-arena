@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: vibesnake
+    runtime: docker
+    plan: free
+    envVars:
+      - key: SNAKE_MOVE_BUDGET
+        value: "0.33"
+      - key: SNAKE_MAX_DEPTH
+        value: "6"
+    healthCheckPath: /

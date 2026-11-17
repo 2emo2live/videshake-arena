@@ -1,0 +1,14 @@
+{
+  "area": 24.0,
+  "len": 30.0,
+  "health": 6.0,
+  "food_race": 26.0,
+  "food_dist": 7.0,
+  "low_health_food": 60.0,
+  "low_health": 30,
+  "head_danger": 500.0,
+  "head_kill": 120.0,
+  "mobility": 10.0,
+  "mobility_opp": 6.0,
+  "wall": 2.0
+}
