@@ -8,7 +8,7 @@ COPY vibesnake ./vibesnake
 COPY run_local.py ./
 
 ENV PORT=8000
-ENV SNAKE_MOVE_BUDGET=0.33
+ENV SNAKE_MOVE_BUDGET=0.10
 EXPOSE 8000
 
 CMD ["uv", "run", "--no-sync", "python", "-m", "vibesnake.api"]

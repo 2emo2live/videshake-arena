@@ -5,7 +5,7 @@ services:
     plan: free
     envVars:
       - key: SNAKE_MOVE_BUDGET
-        value: "0.33"
+        value: "0.10"
       - key: SNAKE_MAX_DEPTH
         value: "6"
     healthCheckPath: /

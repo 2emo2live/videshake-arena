@@ -26,7 +26,7 @@ class _Clock:
 
     def check(self):
         self.counter += 1
-        if self.counter >= 256:
+        if self.counter >= 16:
             self.counter = 0
             if time.perf_counter() > self.deadline:
                 raise Abort
