@@ -31,7 +31,8 @@ def _load_weights() -> Weights:
     )
     try:
         return Weights(json.loads(Path(path).read_text()))
-    except Exception:
+    except Exception as e:
+        print(f"WARNING: could not load weights from {path}: {e}; falling back to defaults", file=sys.stderr)
         return Weights(DEFAULT_WEIGHTS)
 
 
