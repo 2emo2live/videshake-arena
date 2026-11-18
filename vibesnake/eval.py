@@ -33,7 +33,7 @@ class Weights(dict):
         # still "out-area" the opponent. Compare our reachable space with what
         # a snake of our length needs to keep moving, and penalize the deficit.
         "space_req": 1.5,
-        "space_penalty": 60.0,
+        "space_penalty": 40.0,
         # length difference
         "len": 30.0,
         # health difference (scaled /10)

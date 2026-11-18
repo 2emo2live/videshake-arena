@@ -17,7 +17,7 @@
   "draw_value": -99980.0,
   "area_phase": 24.0,
   "space_req": 1.5,
-  "space_penalty": 60.0,
+  "space_penalty": 40.0,
   "root_food": 60.0,
   "root_food_dist": 15.0,
   "root_hunger": 1.0
