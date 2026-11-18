@@ -1,7 +1,7 @@
 """Evaluation heuristics. All heuristics are original; weights are tunable via hill-climbing."""
 
 from .board import Tables
-from .state import State
+from .state import State, vacating_tail
 
 BIG = 1_000_000
 MATE = 100_000
@@ -64,6 +64,13 @@ class Weights(dict):
         "mobility": 10.0,
         # penalty for enemy mobility (same scale)
         "mobility_opp": 6.0,
+        # root food pull (tie-breaker added to the searched root value):
+        # bonus for landing on food, and penalty per step of path distance
+        # from the moved-to cell to the nearest reachable food.
+        "root_food": 60.0,
+        "root_food_dist": 15.0,
+        # food pull grows as health falls: urg = 1 + root_hunger*(100-hp)/100
+        "root_hunger": 1.0,
         # small preference to stay away from walls early (center bias)
         "wall": 2.0,
         # dying penalty shaping handled in search
@@ -158,12 +165,12 @@ def evaluate(t: Tables, state: State, me: int, opp: int, w: Weights) -> float:
     mh = mb[0]
     oh = ob[0]
 
-    # free cells: not occupied by either body, but tails vacate soon -> treat as free
+    # free cells: not occupied by either body, but a truly vacating tail can
+    # be entered this turn (growth duplicates stay occupied -> mask = 0)
     blocked = my_bits | opp_bits
-    free = (~blocked) & t.full
-    # add both tails as effectively-free (they vacate unless the snake eats; decent approx)
-    free |= 1 << mb[-1]
-    free |= 1 << ob[-1]
+    my_tail = vacating_tail(mb)
+    opp_tail = vacating_tail(ob)
+    free = ((~blocked) & t.full) | my_tail | opp_tail
 
     my_area, opp_area = dual_flood(t, mh, oh, free)
 
@@ -214,8 +221,8 @@ def evaluate(t: Tables, state: State, me: int, opp: int, w: Weights) -> float:
 
     # food: distance-discounted race values from wave-based BFS distances
     foods = state.food
-    my_blocked = (my_bits & ~(1 << mb[-1])) | opp_bits
-    opp_blocked = (opp_bits & ~(1 << ob[-1])) | my_bits
+    my_blocked = (my_bits & ~my_tail) | opp_bits
+    opp_blocked = (opp_bits & ~opp_tail) | my_bits
     fd_me = _food_waves(t, mh, my_blocked, foods)
     fd_opp = _food_waves(t, oh, opp_blocked, foods)
     f = foods

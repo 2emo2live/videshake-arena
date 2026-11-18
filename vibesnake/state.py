@@ -84,10 +84,18 @@ def step(t: Tables, state: State, targets):
             new_bodies[i] = (nh,) + b
             new_bits[i] = bits[i] | (1 << nh)
         else:
-            if len(b) > 1:
+            # A duplicated tail means the snake grew last turn: the last
+            # segment leaves, but the other one still occupies the cell, so
+            # it must not be vacated (official engines duplicate the tail on
+            # the growth turn).
+            tail_unique = len(b) > 1 and b[-1] != b[-2]
+            if tail_unique:
                 vacate |= 1 << b[-1]
             new_bodies[i] = (nh,) + b[:-1]
-            new_bits[i] = (bits[i] & ~(1 << b[-1])) | (1 << nh)
+            new_bits[i] = bits[i]
+            if tail_unique:
+                new_bits[i] &= ~(1 << b[-1])
+            new_bits[i] |= 1 << nh
         new_healths[i] = h
 
     occ = (bits[0] | bits[1]) if n == 2 else _or_all(bits)
@@ -133,6 +141,19 @@ def _or_all(bits):
     for b in bits:
         acc |= b
     return acc
+
+
+def vacating_tail(body) -> int:
+    """Bit of the tail cell if it leaves this turn, else 0.
+
+    Official engines duplicate the tail cell on the turn a snake grows: the
+    last segment leaves next turn, but the duplicate still occupies the cell,
+    so it must not be treated as free. Callers use this to tell the two cases
+    apart (unique tail = really vacates).
+    """
+    if len(body) > 1 and body[-1] != body[-2]:
+        return 1 << body[-1]
+    return 0
 
 
 def legal_moves(t: Tables, body):
@@ -209,8 +230,10 @@ class Sim:
         dead = [False] * n
         vacate = 0
         for j in range(n):
-            if not ((self.food >> targets[j]) & 1):
-                vacate |= 1 << bodies[j][-1]
+            b = bodies[j]
+            # duplicated tail = grew last turn; the cell stays occupied
+            if not ((self.food >> targets[j]) & 1) and len(b) > 1 and b[-1] != b[-2]:
+                vacate |= 1 << b[-1]
         occ_free = occ & ~vacate
         for i in range(n):
             nh = targets[i]
@@ -246,6 +269,7 @@ class Sim:
             old_bits = bits[i]
             old_health = healths[i]
             popped = None
+            tail_unique = len(b) > 1 and b[-1] != b[-2]
             b.insert(0, nh)
             if ate:
                 bits[i] = old_bits | (1 << nh)
@@ -253,7 +277,10 @@ class Sim:
                 self.food &= ~(1 << nh)
             else:
                 popped = b.pop()
-                bits[i] = (old_bits & ~(1 << popped)) | (1 << nh)
+                bits[i] = old_bits
+                if tail_unique:
+                    bits[i] &= ~(1 << popped)
+                bits[i] |= 1 << nh
                 healths[i] = old_health - 1
             rec.append((i, old_bits, old_health, popped))
         rec.append(old_food)

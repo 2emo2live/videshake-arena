@@ -35,8 +35,18 @@ def _load_weights() -> Weights:
 
 
 def _weights_version(w: Weights) -> str:
-    payload = json.dumps(dict(w), sort_keys=True).encode()
-    return hashlib.sha1(payload).hexdigest()[:8]
+    """Build id shown in the hello response: weights plus engine sources.
+
+    Hashing the sources too lets us verify from outside which build is live
+    (weight-only hashes made code changes invisible).
+    """
+    h = hashlib.sha1(json.dumps(dict(w), sort_keys=True).encode())
+    for name in ("api.py", "search.py", "eval.py", "state.py", "board.py"):
+        try:
+            h.update(Path(__file__).with_name(name).read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()[:8]
 
 
 SNAKE_INFO = {
