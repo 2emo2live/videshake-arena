@@ -33,7 +33,7 @@ class Weights(dict):
         # still "out-area" the opponent. Compare our reachable space with what
         # a snake of our length needs to keep moving, and penalize the deficit.
         "space_req": 1.5,
-        "space_penalty": 20.0,
+        "space_penalty": 60.0,
         # length difference
         "len": 30.0,
         # health difference (scaled /10)
@@ -73,6 +73,11 @@ class Weights(dict):
         "root_hunger": 1.0,
         # small preference to stay away from walls early (center bias)
         "wall": 2.0,
+        # corner danger: with a long body a corner has at most one usable
+        # exit (the other neighbour is the neck), so following a food trail
+        # into a corner is a classic self-trap. Penalize per segment while
+        # healthy; starving snakes may still take corner food.
+        "corner": 10.0,
         # dying penalty shaping handled in search
     }
 
@@ -265,5 +270,12 @@ def evaluate(t: Tables, state: State, me: int, opp: int, w: Weights) -> float:
     ox, oy = oh % t.w, oh // t.w
     score -= w["wall"] * (min(mx, t.w - 1 - mx) + min(my, t.h - 1 - my))
     score += w["wall"] * 0.5 * (min(ox, t.w - 1 - ox) + min(oy, t.h - 1 - oy))
+
+    # corner trap: a long snake in a corner has one usable exit at most, and
+    # following food along an edge into the corner is how it seals itself in.
+    # While healthy, stay out; a starving snake may still take the food.
+    if state.healths[me] > w["low_health"]:
+        if my_len > 10 and (mx == 0 or mx == t.w - 1) and (my == 0 or my == t.h - 1):
+            score -= w["corner"] * my_len
 
     return score

@@ -121,6 +121,19 @@ def _search(t, sim, me, opp, depth, alpha, beta, clock, w):
     return best
 
 
+# Mate scores carry the distance to death (later death = higher score), so a
+# constant root bonus (food pull, at most a few hundred points) must never be
+# added to them: otherwise dying immediately can outscore surviving for a few
+# more turns. Outside this band the bonus behaves as a normal tie-breaker.
+MATE_GUARD = MATE - 1000
+
+
+def _with_bonus(v: float, b: float) -> float:
+    if v <= -MATE_GUARD or v >= MATE_GUARD:
+        return v
+    return v + b
+
+
 def choose_move(t: Tables, state: State, me: int, opp: int, budget: float, w: Weights,
                 max_depth: int = 6):
     """Returns (dir_index, target_cell, depth_reached)."""
@@ -135,24 +148,33 @@ def choose_move(t: Tables, state: State, me: int, opp: int, budget: float, w: We
     sim = Sim.from_state(state)
     opp_root_moves = legal_moves(t, state.bodies[opp])
 
-    # Root food pull: a constant, move-specific tie-breaker added to the
-    # searched value. Leaf food terms are diluted by search depth and the
-    # opponent model, which made the snake circle food without eating.
-    # Safety is unaffected: a line that dies is near -MATE and no bonus can
-    # lift it over a playable continuation.
+    # Root food pull and corner entry: constant, move-specific tie-breakers
+    # added to the searched value. Leaf terms are diluted by search depth and
+    # the opponent model, which made the snake circle food without eating and
+    # walk into corners while following an edge. They are normal-eval
+    # tie-breakers only: mate scores keep their ordering (see _with_bonus) so
+    # safety and dying-later still come first.
     bonus = {}
     foods = state.food
-    if foods and (w["root_food"] or w["root_food_dist"]):
-        my_blocked = (state.bits[me] & ~(1 << state.bodies[me][-1])) | state.bits[opp]
-        hp = state.healths[me]
-        urg = 1.0 + w["root_hunger"] * max(0, 100 - hp) / 100.0
-        for _, mt in my_moves:
+    hp = state.healths[me]
+    my_len = len(state.bodies[me])
+    urg = 1.0 + w["root_hunger"] * max(0, 100 - hp) / 100.0
+    my_blocked = (state.bits[me] & ~vacating_tail(state.bodies[me])) | state.bits[opp]
+    corner_ok = hp > w["low_health"] and my_len > 10
+    for _, mt in my_moves:
+        b = 0.0
+        if foods and (w["root_food"] or w["root_food_dist"]):
             if (foods >> mt) & 1:
-                b = w["root_food"]
+                b = w["root_food"] * urg
             else:
                 waves = _food_waves(t, mt, my_blocked, foods)
-                b = -w["root_food_dist"] * min(waves.values()) if waves else 0.0
-            bonus[mt] = b * urg
+                if waves:
+                    b = -w["root_food_dist"] * min(waves.values()) * urg
+        if corner_ok:
+            cx, cy = mt % t.w, mt // t.w
+            if (cx == 0 or cx == t.w - 1) and (cy == 0 or cy == t.h - 1):
+                b -= w["corner"] * my_len
+        bonus[mt] = b
 
     best_d, best_c = ordered[0]
     depth_done = 0
@@ -171,7 +193,8 @@ def choose_move(t: Tables, state: State, me: int, opp: int, budget: float, w: We
             for md, mt in moves:
                 vals = []
                 b = bonus.get(mt, 0.0)
-                child_alpha = alpha - b
+                # a mate-valued alpha must not be shifted by the bonus
+                child_alpha = alpha - b if -MATE_GUARD < alpha < MATE_GUARD else alpha
                 for od, ot in opp_root_moves:
                     targets = [0, 0]
                     targets[me] = mt
@@ -192,10 +215,10 @@ def choose_move(t: Tables, state: State, me: int, opp: int, budget: float, w: We
                             vals.append(_search(t, sim, me, opp, depth - 1, child_alpha, INF, clock, w))
                         finally:
                             sim.undo(rec)
-                    if vals[-1] + b <= alpha:
+                    if _with_bonus(vals[-1], b) <= alpha:
                         break
                 worst = min(vals)
-                val = worst + b
+                val = _with_bonus(worst, b)
                 if cur_best_d is None or val > alpha:
                     alpha = val
                     cur_best_d, cur_best_c = md, mt

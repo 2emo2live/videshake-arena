@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from vibesnake.board import tables_for
 from vibesnake.eval import MATE, Weights, evaluate
-from vibesnake.search import _Clock, _search, choose_move
+from vibesnake.search import _Clock, _search, _with_bonus, choose_move
 from vibesnake.state import Sim, legal_moves, step
 from run_local import rand_state
 
@@ -74,7 +74,19 @@ def sim_root(t, state, me, opp, depth, w):
     return out
 
 
+def test_mate_scores_ignore_root_bonus():
+    # A constant root bonus (food pull) must not reorder mate distances:
+    # dying now (-100000) vs dying five plies later (-99995) has to stay
+    # ordered even when the later line is far from food and the immediate
+    # line sits on it. Without the guard the bonus made suicide look better.
+    assert _with_bonus(-(100_000 - 5), -500.0) == -(100_000 - 5)
+    assert _with_bonus(100_000 - 5, 500.0) == 100_000 - 5
+    assert _with_bonus(-99980.0, -500.0) == -99980.0  # draw contempt
+    assert _with_bonus(123.0, -45.0) == 78.0
+
+
 def main():
+    test_mate_scores_ignore_root_bonus()
     w = Weights(json.loads(WEIGHTS_PATH.read_text()))
     # root food pull is a deliberate tie-breaker, not part of plain minimax
     w["root_food"] = 0.0

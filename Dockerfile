@@ -5,6 +5,7 @@ COPY pyproject.toml uv.lock ./
 RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev --compile-bytecode
 
 COPY vibesnake ./vibesnake
+COPY weights.json ./
 COPY run_local.py ./
 
 ENV PORT=8000
