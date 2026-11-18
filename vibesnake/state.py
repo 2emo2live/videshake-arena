@@ -159,3 +159,113 @@ def prune_dead(t: Tables, state: State, alive):
     if len(bodies) == len(state.bodies):
         return state
     return State(tuple(bodies), tuple(bits), tuple(healths), state.food)
+
+
+class Sim:
+    """Mutable in-place simulation state for the search.
+
+    Same rules as step() but with apply/undo pairs so the alpha-beta search
+    avoids allocating a new State per node. Bodies are lists (head first),
+    bits/healths are lists, food is an int bitboard.
+
+    Divergence note: a snake that dies this turn does not consume its target
+    food (step() removes it). This only affects terminal branches where no
+    evaluation happens, so search results are unaffected.
+    """
+
+    __slots__ = ("bodies", "bits", "healths", "food", "n")
+
+    def __init__(self, bodies, bits, healths, food):
+        self.bodies = [list(b) for b in bodies]
+        self.bits = list(bits)
+        self.healths = list(healths)
+        self.food = food
+        self.n = len(self.bodies)
+
+    @classmethod
+    def from_state(cls, state: State):
+        return cls(state.bodies, state.bits, state.healths, state.food)
+
+    def to_state(self) -> State:
+        return State(
+            tuple(tuple(b) for b in self.bodies),
+            tuple(self.bits),
+            tuple(self.healths),
+            self.food,
+        )
+
+    def apply(self, t: Tables, targets):
+        """Simultaneous move; mutates in place. Returns (undo_record, alive)."""
+        bodies = self.bodies
+        bits = self.bits
+        healths = self.healths
+        n = self.n
+        old_food = self.food
+        occ = 0
+        for i in range(n):
+            occ |= bits[i]
+
+        # phase 1: deaths (pure reads; semantics match step())
+        dead = [False] * n
+        vacate = 0
+        for j in range(n):
+            if not ((self.food >> targets[j]) & 1):
+                vacate |= 1 << bodies[j][-1]
+        occ_free = occ & ~vacate
+        for i in range(n):
+            nh = targets[i]
+            ate = (self.food >> nh) & 1
+            if healths[i] <= 1 and not ate:
+                dead[i] = True
+                continue
+            if (occ_free >> nh) & 1:
+                dead[i] = True
+        heads = {}
+        for i in range(n):
+            heads.setdefault(targets[i], []).append(i)
+        for group in heads.values():
+            if len(group) > 1:
+                ls = [len(bodies[i]) for i in group]
+                m = max(ls)
+                if ls.count(m) > 1:
+                    for i in group:
+                        dead[i] = True
+                else:
+                    for i in group:
+                        if len(bodies[i]) < m:
+                            dead[i] = True
+
+        # phase 2: mutate survivors
+        rec = []
+        for i in range(n):
+            if dead[i]:
+                continue
+            b = bodies[i]
+            nh = targets[i]
+            ate = (self.food >> nh) & 1
+            old_bits = bits[i]
+            old_health = healths[i]
+            popped = None
+            b.insert(0, nh)
+            if ate:
+                bits[i] = old_bits | (1 << nh)
+                healths[i] = 100
+                self.food &= ~(1 << nh)
+            else:
+                popped = b.pop()
+                bits[i] = (old_bits & ~(1 << popped)) | (1 << nh)
+                healths[i] = old_health - 1
+            rec.append((i, old_bits, old_health, popped))
+        rec.append(old_food)
+        alive = tuple(not d for d in dead)
+        return rec, alive
+
+    def undo(self, rec):
+        self.food = rec[-1]
+        for i, old_bits, old_health, popped in reversed(rec[:-1]):
+            b = self.bodies[i]
+            b.pop(0)
+            if popped is not None:
+                b.append(popped)
+            self.bits[i] = old_bits
+            self.healths[i] = old_health

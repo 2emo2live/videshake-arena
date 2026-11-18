@@ -7,7 +7,7 @@ iterative deepening, time control) applied to our own simulation and evaluation.
 import time
 
 from .board import Tables
-from .state import State, legal_moves, step
+from .state import State, Sim, legal_moves, step
 from .eval import BIG, MATE, Weights, evaluate
 
 INF = float("inf")
@@ -71,43 +71,50 @@ def bfs_dist_cell(t, c, state, me):
     return best
 
 
-def _search(t, state, me, opp, depth, alpha, beta, clock, w):
+def _search(t, sim, me, opp, depth, alpha, beta, clock, w):
+    """Alpha-beta over the mutable Sim state with apply/undo (no per-node allocs)."""
     clock.check()
     if depth <= 0:
-        return evaluate(t, state, me, opp, w)
+        return evaluate(t, sim, me, opp, w)
 
-    my_moves = legal_moves(t, state.bodies[me])
-    opp_moves = legal_moves(t, state.bodies[opp])
+    my_moves = legal_moves(t, sim.bodies[me])
+    opp_moves = legal_moves(t, sim.bodies[opp])
     if len(my_moves) > 1:
-        my_moves = _order_my_moves(t, state, me, opp, my_moves, w)
+        my_moves = _order_my_moves(t, sim, me, opp, my_moves, w)
 
     best = -INF
     for md, mt in my_moves:
-        worst = INF
+        vals = []
         for od, ot in opp_moves:
             targets = [0, 0]
             targets[me] = mt
             targets[opp] = ot
-            new_state, alive = step(t, state, targets)
+            rec, alive = sim.apply(t, targets)
             if not alive[me]:
+                sim.undo(rec)
                 if not alive[opp]:
-                    val = 0.0  # both die: draw-ish
+                    # mutual destruction: a draw, worth the standing position
+                    vals.append(w["draw_value"])
                 else:
-                    val = -(MATE - (10 - depth))
+                    vals.append(-(MATE - (10 - depth)))
+                    break
             elif not alive[opp]:
-                val = MATE - (10 - depth)
+                sim.undo(rec)
+                vals.append(MATE - (10 - depth))
             else:
-                val = _search(t, new_state, me, opp, depth - 1, alpha, INF, clock, w)
-            if val < worst:
-                worst = val
-            if worst <= alpha:  # opponent can force <= alpha here
-                break
+                try:
+                    vals.append(_search(t, sim, me, opp, depth - 1, alpha, INF, clock, w))
+                finally:
+                    sim.undo(rec)
+            if vals[-1] <= -(MATE - 1000):
+                break  # we die against this reply; no worse reply exists
+        worst = min(vals)
         if worst > best:
             best = worst
-        if best >= beta:
-            return best
-        if best > alpha:
-            alpha = best
+            if best > alpha:
+                alpha = best
+                if alpha >= beta:
+                    return best
     return best
 
 
@@ -122,6 +129,8 @@ def choose_move(t: Tables, state: State, me: int, opp: int, budget: float, w: We
         return my_moves[0][0], my_moves[0][1], 0
 
     ordered = _order_my_moves(t, state, me, opp, my_moves, w)
+    sim = Sim.from_state(state)
+    opp_root_moves = legal_moves(t, state.bodies[opp])
 
     best_d, best_c = ordered[0]
     depth_done = 0
@@ -138,30 +147,33 @@ def choose_move(t: Tables, state: State, me: int, opp: int, budget: float, w: We
             if prev_best in moves:
                 moves = [prev_best] + [m for m in moves if m != prev_best]
             for md, mt in moves:
-                worst = INF
-                for od, ot in legal_moves(t, state.bodies[opp]):
+                vals = []
+                for od, ot in opp_root_moves:
                     targets = [0, 0]
                     targets[me] = mt
                     targets[opp] = ot
-                    new_state, alive = step(t, state, targets)
+                    rec, alive = sim.apply(t, targets)
                     if not alive[me]:
+                        sim.undo(rec)
                         if not alive[opp]:
-                            val = 0.0
+                            vals.append(w["draw_value"])
                         else:
-                            val = -(MATE - (10 - depth))
+                            vals.append(-(MATE - (10 - depth)))
+                            break
                     elif not alive[opp]:
-                        val = MATE - (10 - depth)
+                        sim.undo(rec)
+                        vals.append(MATE - (10 - depth))
                     else:
-                        val = _search(t, new_state, me, opp, depth - 1, alpha, INF, clock, w)
-                    if val < worst:
-                        worst = val
-                    if worst <= alpha:
+                        try:
+                            vals.append(_search(t, sim, me, opp, depth - 1, alpha, INF, clock, w))
+                        finally:
+                            sim.undo(rec)
+                    if vals[-1] <= -(MATE - 1000):
                         break
+                worst = min(vals)
                 if cur_best_d is None or worst > alpha:
-                    # worst > alpha means strictly better than current alpha
-                    if cur_best_d is None or worst > alpha:
-                        alpha = worst
-                        cur_best_d, cur_best_c = md, mt
+                    alpha = worst
+                    cur_best_d, cur_best_c = md, mt
             if cur_best_d is not None:
                 best_d, best_c = cur_best_d, cur_best_c
                 prev_best = (best_d, best_c)
